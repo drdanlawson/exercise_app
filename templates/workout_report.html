@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Workout Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+        hr {
+            margin: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Workout Report ({{ period_start }} to {{ period_end }})</h1>
+    <p><strong>Date Generated:</strong> {{ report_date }}</p>
+
+    <!-- ✅ STEP 1: Client selection form for dashboard -->
+    <h2>Select a Client to View Dashboard</h2>
+    <form method="GET" action="/client-dashboard">
+        <label for="client_id">Select Client:</label>
+        <select name="client_id">
+            {% for user_id, data in sorted_users %}
+                <option value="{{ user_id }}">{{ data.user_info.first_name }} {{ data.user_info.last_name }} ({{ data.user_info.email }})</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Go to Dashboard</button>
+    </form>
+    <hr>
+
+    {% for user_id, data in sorted_users %}
+        {% if data.workouts | length > 0 %}
+            <h2>{{ data.user_info.first_name }} {{ data.user_info.last_name }}</h2>
+            <p><strong>Email:</strong> {{ data.user_info.email }}</p>
+            <p><strong>Total Workouts:</strong> {{ data.workouts | length }}</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Workout Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for workout in data.workouts %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ workout.workout_date | timestamp_to_date }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <hr>
+        {% endif %}
+    {% endfor %}
+</body>
+</html>
+
+

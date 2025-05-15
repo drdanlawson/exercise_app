@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Client Workout Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        label {
+            font-weight: bold;
+        }
+        select, button {
+            margin: 10px 0;
+            padding: 5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+        .comparison {
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Client Workout Dashboard</h1>
+
+    <form method="post">
+        <label for="client_id">Select Client:</label>
+        <select name="client_id" id="client_id" required onchange="this.form.submit()">
+            <option value="">-- Choose a client --</option>
+            {% for client in clients %}
+                <option value="{{ client.id }}" {% if client.id == selected_client_id %}selected{% endif %}>{{ client.name }}</option>
+            {% endfor %}
+        </select>
+
+        {% if workouts %}
+        <label for="workout_ids">Select Workouts to Compare (2 required):</label><br>
+        <select name="workout_ids" multiple size="5" required>
+            {% for workout in workouts %}
+                <option value="{{ workout.id }}" {% if workout.id|string in selected_workout_ids %}selected{% endif %}>
+                    {{ workout.workout_date | timestamp_to_date }} (ID: {{ workout.id }})
+                </option>
+            {% endfor %}
+        </select><br>
+        <button type="submit">Compare Workouts</button>
+        {% endif %}
+    </form>
+
+    {% if comparison %}
+        <div class="comparison">
+            <h2>Workout Comparison</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Exercise</th>
+                        <th>Workout 1 Volume</th>
+                        <th>Workout 2 Volume</th>
+                        <th>Difference</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for exercise, data in comparison.items() %}
+                    <tr>
+                        <td>{{ exercise }}</td>
+                        <td>{{ data.workout1_volume }}</td>
+                        <td>{{ data.workout2_volume }}</td>
+                        <td>{{ data.difference }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</body>
+</html>
+
