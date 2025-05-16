@@ -326,18 +326,21 @@ function renderExerciseCharts(data) {
 <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
 
 <table id="exerciseTable" class="display">
-    <thead>
-        <tr>
-            <th>Exercise</th>
-            <th>Phase</th>
-            <th>Total Sets</th>
-            <th>Total Reps</th>
-            <th>Avg Reps</th>
-            <th>Avg Weight</th>
-            <th>Max Weight</th>
-            <th>Details</th>
-        </tr>
-    </thead>
+<thead>
+    <tr>
+        <th>Exercise</th>
+        <th>Phase</th>
+        <th>Primary Muscle</th>
+        <th>Secondary Muscles</th>
+        <th>Total Sets</th>
+        <th>Total Reps</th>
+        <th>Avg Reps</th>
+        <th>Avg Weight</th>
+        <th>Max Weight</th>
+        <th>Details</th>
+    </tr>
+</thead>
+
     <tbody id="exerciseTableBody"></tbody>
 </table>
 
@@ -379,6 +382,8 @@ function loadExerciseTable() {
             tr.innerHTML = `
                 <td>${row.exercise}</td>
                 <td>${row.phase}</td>
+                <td>${row.primary_muscle || "—"}</td>
+                <td>${(row.secondary_muscles || []).join(", ")}</td>
                 <td>${row.total_sets}</td>
                 <td>${row.total_reps}</td>
                 <td>${row.avg_reps.toFixed(1)}</td>

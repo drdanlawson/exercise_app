@@ -4,7 +4,8 @@ import os
 import datetime
 import time
 import json
-
+with open("cache/exercise_metadata.json", "r") as f:
+    EXERCISE_METADATA = json.load(f)
 
 app = Flask(__name__)
 
@@ -340,6 +341,10 @@ def filter_pre_post_exercise_data():
     with open(cache_path, "r") as f:
         workouts = json.load(f)
 
+    # Load the exercise metadata
+    with open("cache/exercise_metadata.json", "r") as f:
+        EXERCISE_METADATA = json.load(f)
+
     def extract_sets(start, end, phase_label):
         result = []
         for w in workouts:
@@ -349,13 +354,23 @@ def filter_pre_post_exercise_data():
             date_str = w_date.strftime("%Y-%m-%d")
             for ex in w.get("workout_exercises", []):
                 name = ex.get("name", "Unnamed Exercise")
+                ex_id = ex.get("exercise_id")
+
+                # Fetch muscle group metadata
+                meta = EXERCISE_METADATA.get(str(ex_id), {})
+                primary = meta.get("primary_muscle_group")
+                secondaries = meta.get("secondary_muscle_groups", [])
+
                 for s in ex.get("workout_exercise_sets", []):
                     result.append({
                         "exercise": name,
+                        "exercise_id": ex_id,
                         "date": date_str,
                         "reps": s.get("reps", 0),
                         "weight": s.get("weight", 0.0),
-                        "phase": phase_label
+                        "phase": phase_label,
+                        "primary_muscle_group": primary,
+                        "secondary_muscle_groups": secondaries
                     })
         return result
 
@@ -363,6 +378,7 @@ def filter_pre_post_exercise_data():
     post_sets = extract_sets(post_start, post_end, "Post")
     all_sets = pre_sets + post_sets
 
+    # Group by exercise name + phase
     grouped = {}
     for s in all_sets:
         key = (s["exercise"], s["phase"])
@@ -375,18 +391,23 @@ def filter_pre_post_exercise_data():
         avg_reps = total_reps / total_sets if total_sets else 0
         avg_weight = sum(s["weight"] for s in sets) / total_sets if total_sets else 0
         max_weight = max(s["weight"] for s in sets) if sets else 0
+
         response_data.append({
             "exercise": exercise,
+            "exercise_id": ex.get("exercise_id", None),
             "phase": phase,
             "total_sets": total_sets,
             "total_reps": total_reps,
             "avg_reps": avg_reps,
             "avg_weight": avg_weight,
             "max_weight": max_weight,
-            "sets": sets
+            "sets": sets,
+            "primary_muscle_group": sets[0].get("primary_muscle_group", "Unknown"),
+            "secondary_muscle_groups": sets[0].get("secondary_muscle_groups", [])
         })
 
     return jsonify(response_data)
+
 
 
 if __name__ == "__main__":
