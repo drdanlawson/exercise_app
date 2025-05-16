@@ -409,7 +409,6 @@ def filter_pre_post_exercise_data():
     return jsonify(response_data)
 
 
-
 if __name__ == "__main__":
     app.run(debug=True)
 
