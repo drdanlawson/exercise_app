@@ -1,42 +1,423 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Client Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <h1>Workout Summary for Client ID: {{ client_id }}</h1>
+    <h1>Client Dashboard for ID: {{ client_id }}</h1>
 
-    <h2>Workout Dates</h2>
-    <ul>
-        {% for date in dates %}
-        <li>{{ date }}</li>
-        {% endfor %}
-    </ul>
+    <label for="start">Start date:</label>
+    <input type="date" id="start" name="start">
 
-    <h2>Logged Exercises</h2>
-    <table border="1">
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Exercise</th>
-                <th>Sets</th>
-                <th>Reps</th>
-                <th>Weight</th>
-                <th>Volume</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in exercises %}
-            <tr>
-                <td>{{ row.workout_date }}</td>
-                <td>{{ row.exercise_name }}</td>
-                <td>{{ row.sets }}</td>
-                <td>{{ row.reps }}</td>
-                <td>{{ row.weight }}</td>
-                <td>{{ row.volume }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <label for="end">End date:</label>
+    <input type="date" id="end" name="end">
+
+    <button onclick="filterData()">Filter</button>
+
+    <div>
+        <canvas id="volumeChart"></canvas>
+        <canvas id="setChart"></canvas>
+        <canvas id="maxWeightChart"></canvas>
+        <canvas id="avgWeightChart"></canvas>
+    </div>
+
+    <h2>Pre vs Post Workout Comparison</h2>
+
+<label>Pre Start:</label><input type="date" id="pre_start">
+<label>Pre End:</label><input type="date" id="pre_end">
+<br>
+<label>Post Start:</label><input type="date" id="post_start">
+<label>Post End:</label><input type="date" id="post_end">
+<br>
+<button onclick="filterPrePost()">Compare Pre vs Post</button>
+
+<div>
+    <canvas id="prePostVolumeChart"></canvas>
+    <canvas id="prePostSetChart"></canvas>
+    <canvas id="prePostMaxChart"></canvas>
+    <canvas id="prePostAvgChart"></canvas>
+</div>
+
+<h2>Compare Specific Exercises (Pre vs Post)</h2>
+<label for="ex-pre-start">Pre Start:</label>
+<input type="date" id="ex-pre-start">
+<label for="ex-pre-end">Pre End:</label>
+<input type="date" id="ex-pre-end">
+<label for="ex-post-start">Post Start:</label>
+<input type="date" id="ex-post-start">
+<label for="ex-post-end">Post End:</label>
+<input type="date" id="ex-post-end">
+<button onclick="compareExercisePrePost()">Compare Exercises</button>
+
+<canvas id="exVolumeChart"></canvas>
+<canvas id="exMaxWeightChart"></canvas>
+<canvas id="exAvgWeightChart"></canvas>
+
+
+<script>
+    let volumeChart, setChart, maxWeightChart, avgWeightChart;
+
+    function renderCharts(data) {
+        const labels = Object.keys(data);
+        const volumes = labels.map(date => data[date].volume);
+        const sets = labels.map(date => data[date].sets);
+        const maxWeights = labels.map(date => data[date].max_weight);
+        const avgWeights = labels.map(date => data[date].avg_weight);  // <-- ADD THIS
+
+        if (volumeChart) volumeChart.destroy();
+        if (setChart) setChart.destroy();
+        if (maxWeightChart) maxWeightChart.destroy();
+        if (avgWeightChart) avgWeightChart.destroy();  // <-- Also destroy this if it already exists
+
+        const ctx1 = document.getElementById('volumeChart').getContext('2d');
+        volumeChart = new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Training Volume',
+                    data: volumes
+                }]
+            }
+        });
+
+        const ctx2 = document.getElementById('setChart').getContext('2d');
+        setChart = new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Set Volume',
+                    data: sets
+                }]
+            }
+        });
+
+        const ctx3 = document.getElementById('maxWeightChart').getContext('2d');
+        maxWeightChart = new Chart(ctx3, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Max Weight',
+                    data: maxWeights
+                }]
+            }
+        });
+
+        const ctx4 = document.getElementById('avgWeightChart').getContext('2d');
+        avgWeightChart = new Chart(ctx4, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Average Weight',
+                    data: avgWeights
+                }]
+            }
+        });
+    }
+
+    function filterData() {
+        const start = document.getElementById('start').value;
+        const end = document.getElementById('end').value;
+        const clientId = "{{ client_id }}";
+
+        if (!start || !end) {
+            alert("Please select both start and end dates.");
+            return;
+        }
+
+        fetch("/filter-client-data", {
+            method: "POST",
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                start_date: start,
+                end_date: end,
+                client_id: clientId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            renderCharts(data);
+        })
+        .catch(error => {
+            console.error("Error fetching filtered data:", error);
+        });
+    }
+
+    function filterPrePost() {
+    const preStart = document.getElementById("pre_start").value;
+    const preEnd = document.getElementById("pre_end").value;
+    const postStart = document.getElementById("post_start").value;
+    const postEnd = document.getElementById("post_end").value;
+    const clientId = "{{ client_id }}";
+
+    if (!preStart || !preEnd || !postStart || !postEnd) {
+        alert("Please fill in all date ranges.");
+        return;
+    }
+
+    fetch("/filter-pre-post-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            client_id: clientId,
+            pre_start: preStart,
+            pre_end: preEnd,
+            post_start: postStart,
+            post_end: postEnd
+        })
+    })
+    .then(res => res.json())
+    .then(data => renderPrePostCharts(data));
+}
+
+function renderPrePostCharts(data) {
+    const labels = data.map(d => d.label);
+    const preVolume = data.map(d => d.pre.volume);
+    const postVolume = data.map(d => d.post.volume);
+    const preSets = data.map(d => d.pre.sets);
+    const postSets = data.map(d => d.post.sets);
+    const preMax = data.map(d => d.pre.max_weight);
+    const postMax = data.map(d => d.post.max_weight);
+    const preAvg = data.map(d => d.pre.avg_weight);
+    const postAvg = data.map(d => d.post.avg_weight);
+
+    new Chart(document.getElementById("prePostVolumeChart"), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: "Pre Volume", data: preVolume },
+                { label: "Post Volume", data: postVolume }
+            ]
+        }
+    });
+
+    new Chart(document.getElementById("prePostSetChart"), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: "Pre Sets", data: preSets },
+                { label: "Post Sets", data: postSets }
+            ]
+        }
+    });
+
+    new Chart(document.getElementById("prePostMaxChart"), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: "Pre Max", data: preMax },
+                { label: "Post Max", data: postMax }
+            ]
+        }
+    });
+
+    new Chart(document.getElementById("prePostAvgChart"), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: "Pre Avg", data: preAvg },
+                { label: "Post Avg", data: postAvg }
+            ]
+        }
+    });
+}
+
+let exVolumeChart, exMaxWeightChart, exAvgWeightChart;
+
+function compareExercisePrePost() {
+    const clientId = "{{ client_id }}";
+    const preStart = document.getElementById("ex-pre-start").value;
+    const preEnd = document.getElementById("ex-pre-end").value;
+    const postStart = document.getElementById("ex-post-start").value;
+    const postEnd = document.getElementById("ex-post-end").value;
+
+    if (!preStart || !preEnd || !postStart || !postEnd) {
+        alert("Please fill all Pre and Post dates.");
+        return;
+    }
+
+    fetch("/filter-exercise-pre-post-data", {
+        method: "POST",
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            client_id: clientId,
+            pre_start: preStart,
+            pre_end: preEnd,
+            post_start: postStart,
+            post_end: postEnd
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        renderExerciseCharts(data);
+    })
+    .catch(err => console.error("Exercise compare error:", err));
+}
+
+function renderExerciseCharts(data) {
+    const { volume, max_weight, avg_weight } = data;
+
+    [exVolumeChart, exMaxWeightChart, exAvgWeightChart].forEach(chart => {
+        if (chart) chart.destroy();
+    });
+
+    const createChart = (ctxId, label, dataset) => {
+        const ctx = document.getElementById(ctxId).getContext('2d');
+        return new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: dataset.labels,
+                datasets: [
+                    {
+                        label: 'Pre',
+                        data: dataset.pre,
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)'
+                    },
+                    {
+                        label: 'Post',
+                        data: dataset.post,
+                        backgroundColor: 'rgba(255, 99, 132, 0.7)'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: label
+                    }
+                }
+            }
+        });
+    };
+
+    exVolumeChart = createChart("exVolumeChart", "Exercise Volume (Pre vs Post)", volume);
+    exMaxWeightChart = createChart("exMaxWeightChart", "Exercise Max Weight (Pre vs Post)", max_weight);
+    exAvgWeightChart = createChart("exAvgWeightChart", "Exercise Avg Weight (Pre vs Post)", avg_weight);
+}
+
+</script>
+
+<!-- Section 4: Expandable Pre-Post Comparison Table by Exercise -->
+<h2>Pre-Post Comparison Table by Exercise</h2>
+<label>Pre Range:</label>
+<input type="date" id="preStart"> to <input type="date" id="preEnd">
+<label>Post Range:</label>
+<input type="date" id="postStart"> to <input type="date" id="postEnd">
+<button onclick="loadExerciseTable()">Compare Exercises</button>
+
+<!-- DataTable dependencies -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+
+<table id="exerciseTable" class="display">
+    <thead>
+        <tr>
+            <th>Exercise</th>
+            <th>Phase</th>
+            <th>Total Sets</th>
+            <th>Total Reps</th>
+            <th>Avg Reps</th>
+            <th>Avg Weight</th>
+            <th>Max Weight</th>
+            <th>Details</th>
+        </tr>
+    </thead>
+    <tbody id="exerciseTableBody"></tbody>
+</table>
+
+<style>
+    table.dataTable tbody td {
+        vertical-align: top;
+    }
+    .details-table {
+        margin-top: 10px;
+        margin-left: 20px;
+    }
+</style>
+
+<script>
+function loadExerciseTable() {
+    const preStart = document.getElementById('preStart').value;
+    const preEnd = document.getElementById('preEnd').value;
+    const postStart = document.getElementById('postStart').value;
+    const postEnd = document.getElementById('postEnd').value;
+    const clientId = "{{ client_id }}";
+
+    fetch("/filter-pre-post-exercise-data", {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            client_id: clientId,
+            pre_start: preStart,
+            pre_end: preEnd,
+            post_start: postStart,
+            post_end: postEnd
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        const tableBody = document.getElementById("exerciseTableBody");
+        tableBody.innerHTML = "";
+        data.forEach(row => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${row.exercise}</td>
+                <td>${row.phase}</td>
+                <td>${row.total_sets}</td>
+                <td>${row.total_reps}</td>
+                <td>${row.avg_reps.toFixed(1)}</td>
+                <td>${row.avg_weight.toFixed(1)}</td>
+                <td>${row.max_weight}</td>
+                <td><button onclick='toggleDetails("${row.exercise}_${row.phase}")'>Toggle</button></td>
+            `;
+            tableBody.appendChild(tr);
+
+            const detailTr = document.createElement("tr");
+            detailTr.style.display = "none";
+            detailTr.id = `${row.exercise}_${row.phase}`;
+            detailTr.innerHTML = `
+                <td colspan="8">
+                    <table class='details-table'>
+                        <thead>
+                            <tr><th>Date</th><th>Reps</th><th>Weight</th></tr>
+                        </thead>
+                        <tbody>
+                            ${row.sets.map(set => `<tr><td>${set.date}</td><td>${set.reps}</td><td>${set.weight}</td></tr>`).join('')}
+                        </tbody>
+                    </table>
+                </td>
+            `;
+            tableBody.appendChild(detailTr);
+        });
+
+        if ($.fn.DataTable.isDataTable('#exerciseTable')) {
+            $('#exerciseTable').DataTable().destroy();
+        }
+        $('#exerciseTable').DataTable();
+    });
+}
+
+function toggleDetails(id) {
+    const row = document.getElementById(id);
+    row.style.display = row.style.display === "none" ? "table-row" : "none";
+}
+</script>
+
 </body>
 </html>
