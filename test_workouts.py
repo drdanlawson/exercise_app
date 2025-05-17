@@ -1,4 +1,6 @@
 from flask import Flask, request, render_template, jsonify
+from collections import defaultdict
+from flask import send_from_directory
 import requests
 import os
 import datetime
@@ -23,6 +25,7 @@ END_DATE = int(time.time())
 @app.template_filter('timestamp_to_date')
 def timestamp_to_date(timestamp):
     return datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+
 
 def read_from_cache(filepath):
     try:
@@ -138,7 +141,7 @@ def client_dashboard():
 
     all_exercises = []
     for w in workouts:
-        workout_date = datetime.datetime.fromtimestamp(w.get("workout_date", 0)).strftime("%Y-%m-%d")
+        workout_date = datetime. datetime.fromtimestamp(w.get("workout_date", 0)).strftime("%Y-%m-%d")
         for exercise in w.get("workout_exercises", []):
             exercise_name = exercise.get("name", "Unnamed Exercise")
             for s in exercise.get("workout_exercise_sets", []):
@@ -205,6 +208,90 @@ def filter_client_data():
      summary[date_str]["avg_weight"] = total_weight / sets if sets > 0 else 0
 
     return summary
+
+
+@app.route("/cache/<path:filename>")
+def serve_cache_file(filename):
+    return send_from_directory("cache", filename)
+
+
+@app.route("/batch-exercise-longitudinal-data", methods=["POST"])
+def batch_exercise_longitudinal_data():
+    data = request.json
+    client_id = data.get("client_id")
+    exercise_ids = [str(eid) for eid in data.get("exercise_ids", [])]  # up to 5, ensure str
+    start_date = datetime.datetime.strptime(data.get("start_date"), "%Y-%m-%d")
+    end_date = datetime.datetime.strptime(data.get("end_date"), "%Y-%m-%d")
+
+    if len(exercise_ids) == 0 or len(exercise_ids) > 5:
+        return {"error": "Please select between 1 and 5 exercises."}, 400
+
+    cache_path = os.path.join("cache", "workouts", ALL_TIME_FOLDER, f"{client_id}.json")
+    metadata_path = os.path.join("cache", "exercise_metadata.json")
+
+    if not os.path.exists(cache_path) or not os.path.exists(metadata_path):
+        return jsonify({exercise_id: {} for exercise_id in exercise_ids})  # return empty dicts
+
+    with open(cache_path, "r") as f:
+        workouts = json.load(f)
+    with open(metadata_path, "r") as f:
+        metadata = json.load(f)
+
+    response = {}
+
+    for exercise_id in exercise_ids:
+        summary = {}
+        for w in workouts:
+            raw_date = w.get("workout_date", 0)
+            try:
+                w_date = datetime.datetime.fromtimestamp(raw_date)
+            except Exception as e:
+                continue
+
+            if not (start_date <= w_date <= end_date):
+                continue
+
+            date_str = w_date.strftime("%Y-%m-%d")
+
+            for exercise in w.get("workout_exercises", []):
+                if str(exercise.get("exercise_id")) != exercise_id:
+                    continue
+
+                for s in exercise.get("workout_exercise_sets", []):
+                    weight = s.get("weight", 0.0)
+                    reps = s.get("reps", 0)
+                    volume = weight * reps
+
+                    if date_str not in summary:
+                        summary[date_str] = {
+                            "volume": 0,
+                            "sets": 0,
+                            "reps": 0,
+                            "max_weight": 0,
+                            "total_weight": 0
+                        }
+
+                    summary[date_str]["volume"] += volume
+                    summary[date_str]["sets"] += 1
+                    summary[date_str]["reps"] += reps
+                    summary[date_str]["max_weight"] = max(summary[date_str]["max_weight"], weight)
+                    summary[date_str]["total_weight"] += weight
+
+        # Compute average weight per day
+        for day in summary:
+            sets = summary[day]["sets"]
+            summary[day]["avg_weight"] = summary[day]["total_weight"] / sets if sets > 0 else 0
+
+        # Attach name and data (even if empty)
+        exercise_meta = metadata.get(exercise_id, {})
+        response[exercise_id] = {
+            "name": exercise_meta.get("name", f"Exercise {exercise_id}"),
+            "data": summary
+        }
+
+    return jsonify(response)
+
+
 
 @app.route("/filter-pre-post-data", methods=["POST"])
 def filter_pre_post_data():
@@ -327,8 +414,17 @@ def filter_exercise_pre_post_data():
 
 @app.route("/filter-pre-post-exercise-data", methods=["POST"])
 def filter_pre_post_exercise_data():
-    data = request.json
+    data = request.json or {}
+
+    # 🔒 Validate required date fields early
+    required_fields = ["pre_start", "pre_end", "post_start", "post_end"]
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({"error": f"Missing '{field}' in request."}), 400
+    
     client_id = data.get("client_id")
+
+    # ✅ Use strptime, not fromtimestamp
     pre_start = datetime.datetime.strptime(data.get("pre_start"), "%Y-%m-%d")
     pre_end = datetime.datetime.strptime(data.get("pre_end"), "%Y-%m-%d")
     post_start = datetime.datetime.strptime(data.get("post_start"), "%Y-%m-%d")
@@ -341,7 +437,6 @@ def filter_pre_post_exercise_data():
     with open(cache_path, "r") as f:
         workouts = json.load(f)
 
-    # Load the exercise metadata
     with open("cache/exercise_metadata.json", "r") as f:
         EXERCISE_METADATA = json.load(f)
 
@@ -355,8 +450,6 @@ def filter_pre_post_exercise_data():
             for ex in w.get("workout_exercises", []):
                 name = ex.get("name", "Unnamed Exercise")
                 ex_id = ex.get("exercise_id")
-
-                # Fetch muscle group metadata
                 meta = EXERCISE_METADATA.get(str(ex_id), {})
                 primary = meta.get("primary_muscle_group")
                 secondaries = meta.get("secondary_muscle_groups", [])
@@ -378,7 +471,6 @@ def filter_pre_post_exercise_data():
     post_sets = extract_sets(post_start, post_end, "Post")
     all_sets = pre_sets + post_sets
 
-    # Group by exercise name + phase
     grouped = {}
     for s in all_sets:
         key = (s["exercise"], s["phase"])
@@ -394,7 +486,7 @@ def filter_pre_post_exercise_data():
 
         response_data.append({
             "exercise": exercise,
-            "exercise_id": ex.get("exercise_id", None),
+            "exercise_id": sets[0].get("exercise_id", None),
             "phase": phase,
             "total_sets": total_sets,
             "total_reps": total_reps,
@@ -407,6 +499,126 @@ def filter_pre_post_exercise_data():
         })
 
     return jsonify(response_data)
+
+
+
+@app.route("/muscle-group-weekly-data", methods=["POST"])
+def muscle_group_weekly_data():
+    data = request.json
+    client_id = data.get("client_id")
+    start_date = datetime.datetime.strptime(data.get("start_date"), "%Y-%m-%d")
+    end_date = datetime.datetime.strptime(data.get("end_date"), "%Y-%m-%d")
+
+    cache_path = os.path.join("cache", "workouts", ALL_TIME_FOLDER, f"{client_id}.json")
+    metadata_path = os.path.join("cache", "exercise_metadata.json")
+
+    if not os.path.exists(cache_path) or not os.path.exists(metadata_path):
+        return jsonify({})
+
+    with open(cache_path, "r") as f:
+        workouts = json.load(f)
+    with open(metadata_path, "r") as f:
+        EXERCISE_METADATA = json.load(f)
+
+    weekly_data = defaultdict(lambda: defaultdict(lambda: {"direct": 0, "indirect": 0}))
+
+    for w in workouts:
+        w_date = datetime.datetime.fromtimestamp(w.get("workout_date", 0))
+        if not (start_date <= w_date <= end_date):
+            continue
+
+        week_start = w_date - datetime.timedelta(days=w_date.weekday())
+        week_end = week_start + datetime.timedelta(days=6)
+        week_str = f"{week_start.strftime('%b %d')} – {week_end.strftime('%b %d')}"
+
+        for ex in w.get("workout_exercises", []):
+            ex_id = ex.get("exercise_id")
+            meta = EXERCISE_METADATA.get(str(ex_id), {})
+            primary = meta.get("primary_muscle_group")
+            secondaries = meta.get("secondary_muscle_groups", [])
+
+            for s in ex.get("workout_exercise_sets", []):
+                if primary:
+                    weekly_data[primary][week_str]["direct"] += 1
+                for mg in secondaries:
+                    weekly_data[mg][week_str]["indirect"] += 1
+
+    for mg in weekly_data:
+        for week in weekly_data[mg]:
+            weekly_data[mg][week]["total"] = (
+                weekly_data[mg][week]["direct"] + weekly_data[mg][week]["indirect"]
+            )
+
+    # Summary total
+    summary = {}
+    for mg, weeks in weekly_data.items():
+        direct = sum(weeks[w]["direct"] for w in weeks)
+        indirect = sum(weeks[w]["indirect"] for w in weeks)
+        summary[mg] = {"direct": direct, "indirect": indirect, "total": direct + indirect}
+
+    weekly_data["summary"] = summary
+
+    return jsonify(weekly_data)
+
+
+
+@app.route("/muscle-group-week-comparison", methods=["POST"])
+def muscle_group_week_comparison():
+    data = request.json
+    client_id = data.get("client_id")
+    week_a_start = datetime.datetime.strptime(data.get("week_a"), "%Y-%m-%d")
+    week_b_start = datetime.datetime.strptime(data.get("week_b"), "%Y-%m-%d")
+    week_a_end = week_a_start + datetime.timedelta(days=6)
+    week_b_end = week_b_start + datetime.timedelta(days=6)
+
+    workout_path = os.path.join("cache", "workouts", ALL_TIME_FOLDER, f"{client_id}.json")
+    metadata_path = os.path.join("cache", "exercise_metadata.json")
+
+    if not os.path.exists(workout_path) or not os.path.exists(metadata_path):
+        return jsonify({})
+
+    with open(workout_path, "r") as f:
+        workouts = json.load(f)
+    with open(metadata_path, "r") as f:
+        metadata = json.load(f)
+
+    def compute_sets_by_muscle_group(start, end):
+        summary = defaultdict(lambda: {"direct": 0, "indirect": 0})
+        for w in workouts:
+            w_date = datetime.datetime.fromtimestamp(w.get("workout_date", 0))
+            if not (start <= w_date <= end):
+                continue
+            for ex in w.get("workout_exercises", []):
+                ex_id = ex.get("exercise_id")
+                meta = metadata.get(str(ex_id), {})
+                primary = meta.get("primary_muscle_group")
+                secondaries = meta.get("secondary_muscle_groups", [])
+                for s in ex.get("workout_exercise_sets", []):
+                    if primary:
+                        summary[primary]["direct"] += 1
+                    for mg in secondaries:
+                        summary[mg]["indirect"] += 1
+        for mg in summary:
+            summary[mg]["total"] = summary[mg]["direct"] + summary[mg]["indirect"]
+        return summary
+
+    week_a_summary = compute_sets_by_muscle_group(week_a_start, week_a_end)
+    week_b_summary = compute_sets_by_muscle_group(week_b_start, week_b_end)
+
+    all_mgs = sorted(set(week_a_summary.keys()) | set(week_b_summary.keys()))
+    result = {
+        "labels": all_mgs,
+        "week_a": [week_a_summary.get(mg, {}).get("total", 0) for mg in all_mgs],
+        "week_b": [week_b_summary.get(mg, {}).get("total", 0) for mg in all_mgs],
+        "label_a": f"{week_a_start.strftime('%b %d')} – {week_a_end.strftime('%b %d')}",
+        "label_b": f"{week_b_start.strftime('%b %d')} – {week_b_end.strftime('%b %d')}",
+    }
+
+    print("Week A Muscle Groups:", week_a_summary.keys())
+    print("Week B Muscle Groups:", week_b_summary.keys())
+
+    return jsonify(result)
+
 
 
 if __name__ == "__main__":
